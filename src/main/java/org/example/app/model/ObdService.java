@@ -1,0 +1,94 @@
+package org.example.app.model;
+
+import com.github.pires.obd.commands.ObdCommand;
+import com.github.pires.obd.commands.SpeedCommand;
+import com.github.pires.obd.commands.engine.RPMCommand;
+import com.github.pires.obd.commands.fuel.FuelLevelCommand;
+import com.github.pires.obd.commands.temperature.EngineCoolantTemperatureCommand;
+import gnu.io.CommPortIdentifier;
+import gnu.io.SerialPort;
+
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.*;
+
+public class ObdService {
+    private SerialPort serialPort;
+    private InputStream in;
+    private OutputStream out;
+
+    public List<String> getAvailablePorts() {
+        List<String> ports = new ArrayList<>();
+        Enumeration<?> portList = CommPortIdentifier.getPortIdentifiers();
+        while (portList.hasMoreElements()) {
+            CommPortIdentifier portId = (CommPortIdentifier) portList.nextElement();
+            if (portId.getPortType() == CommPortIdentifier.PORT_SERIAL) {
+                ports.add(portId.getName());
+            }
+        }
+        return ports;
+    }
+
+    public boolean connect(String portName) {
+        try {
+            CommPortIdentifier portId = CommPortIdentifier.getPortIdentifier(portName);
+            serialPort = (SerialPort) portId.open("OBD2App", 2000);
+            serialPort.setSerialPortParams(9600, SerialPort.DATABITS_8,
+                    SerialPort.STOPBITS_1, SerialPort.PARITY_NONE);
+            in = serialPort.getInputStream();
+            out = serialPort.getOutputStream();
+
+            initializeOBDAdapter();
+
+            return true;
+        } catch (Exception e) {
+            e.printStackTrace();
+            return false;
+        }
+    }
+
+    private void initializeOBDAdapter() {
+        try {
+            sendATCommand("ATZ");   // Reset
+            sendATCommand("ATE0");  // Echo off
+            sendATCommand("ATL0");  // Linefeeds off
+            sendATCommand("ATS0");  // Spaces off
+            sendATCommand("ATH0");  // Headers off
+        } catch (Exception e) {
+            e.printStackTrace();
+        }
+    }
+
+    private void sendATCommand(String command) throws Exception {
+        out.write((command + "\r").getBytes());
+        out.flush();
+        Thread.sleep(200); // wait for response
+        while (in.available() > 0) in.read(); // clear buffer
+    }
+
+
+    private String runCommand(ObdCommand command) {
+        try {
+            command.run(in, out);
+            return command.getFormattedResult();
+        } catch (Exception e) {
+            return "Error: " + e.getMessage();
+        }
+    }
+
+    public String getRPM() {
+        return runCommand(new RPMCommand());
+    }
+
+    public String getCoolantTemp() {
+        return runCommand(new EngineCoolantTemperatureCommand());
+    }
+    public String getSpeed() {
+        return runCommand(new SpeedCommand());
+    }
+
+    public String getFuelLevel() {
+        return runCommand(new FuelLevelCommand());
+    }
+
+}
